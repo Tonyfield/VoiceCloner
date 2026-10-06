@@ -1,0 +1,110 @@
+label: IndexTTS v2.5
+params:
+  model:
+    title: 模型名
+    type: string
+    default: IndexTeam/IndexTTS-2.5
+    required: true
+  voice:
+    title: 音色
+    type: string
+    default: default
+  use_instructions:
+    title: 启用合成指令
+    type: boolean
+    default: false
+  instructions:
+    title: 合成指令
+    type: text
+    default: |
+      文学朗读风格。吐字清晰，声音厚实温和，节奏从容。
+      旁白客观而有感染力，人物对白采用轻度角色化演绎。
+      停顿自然，富有叙事张力。
+    show_when: use_instructions
+  language:
+    title: 语言
+    type: select
+    options: [zh, en, ja]
+    default: zh
+    help: 日语字符码为 ja；如服务端要求 jp，可在此改为 jp
+  task_type:
+    title: 任务类型
+    type: select
+    options: [CustomVoice, VoiceDesign, Base]
+    default: CustomVoice
+  stream_format:
+    title: 流式格式
+    type: string
+    default: sse
+  stream:
+    title: 流式响应
+    type: boolean
+    default: false
+  duration_seconds:
+    title: 目标时长（秒）
+    type: number
+    default: 0
+  x_vector_only_mode:
+    title: 仅使用音色向量
+    type: boolean
+    default: false
+  speed:
+    title: 语速
+    type: number
+    default: 1.0
+  max_new_tokens:
+    title: 最大 tokens
+    type: integer
+    default: 1000
+  seed:
+    title: 随机种子
+    type: seed
+    default: 1234
+    help: 可选“随机”（每次合成随机）或固定整数（默认 1234）
+  initial_codec_chunk_frames:
+    title: 首个 codec 分块帧数
+    type: integer
+    default: 0
+  non_streaming_mode:
+    title: 非流式模式
+    type: boolean
+    default: false
+  response_format:
+    title: 输出格式
+    type: select
+    options: [wav, mp3, flac, pcm]
+    default: wav
+  ref_audio:
+    title: 参考音频路径或 URL
+    type: string
+    default: null
+  emotion_mode:
+    title: 情感来源
+    type: segmented
+    options:
+      - { label: 关闭, value: none }
+      - { label: 文本, value: text }
+      - { label: 随机, value: random }
+      - { label: 情感向量, value: vector }
+    default: none
+    help: 三种情感方式互斥，也可全部关闭
+  emo_alpha:
+    title: 情感权重（emo_alpha）
+    type: number
+    default: 0.3
+    min: 0
+    max: 1
+    step: 0.05
+    help: 情感参考音频权重，范围 0.0-1.0
+  emo_text:
+    title: 情感描述（emo_text）
+    type: text
+    default: ""
+    show_when: emotion_mode=text
+    help: 留空时按正文自动生成情感（use_emo_text）；填写后实现文本与情感分离
+  emo_vector:
+    title: 情感向量 [高兴,愤怒,悲伤,害怕,厌恶,忧郁,惊讶,平静]
+    type: emotionVector
+    default: [0, 0, 0, 0, 0, 0, 0, 0]
+    show_when: emotion_mode=vector
+    help: 每个维度 0.0-1.0，步长 0.1

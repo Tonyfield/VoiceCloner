@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+**/data
+**/log
+server/log
+server/data
+client/dist
+.git
+.trae
+*.log

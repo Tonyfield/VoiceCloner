@@ -1,0 +1,45 @@
+{
+  "name": "voicecloner-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VoiceCloner Web backend (Node + TypeScript)",
+  "main": "dist/main.js",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "node dist/main.js",
+    "test": "tsx --test --test-concurrency=1 src/services/phonetic.test.ts src/services/textEnhance.test.ts src/services/segmenter.test.ts src/services/segmenter.part0016.test.ts src/services/retry.test.ts src/services/errorService.test.ts src/services/segmentLogService.test.ts src/services/exporter.test.ts src/services/taskRunner.test.ts src/services/taskService.test.ts src/routes/tasks.test.ts",
+    "test:segment": "tsx --test src/services/segmenter.part0016.test.ts",
+    "mock:tts": "tsx src/mockTtsServer.ts"
+  },
+  "dependencies": {
+    "@node-rs/jieba": "^2.0.3",
+    "adm-zip": "^0.5.16",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "js-yaml": "^4.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mammoth": "^1.8.0",
+    "multer": "^1.4.5-lts.1",
+    "pdf-parse": "^1.1.1",
+    "winston": "^3.14.2"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.5",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/js-yaml": "^4.0.9",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^24.0.0",
+    "@types/pdf-parse": "^1.1.4",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}

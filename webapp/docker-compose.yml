@@ -1,0 +1,27 @@
+services:
+  voicecloner-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: voicecloner-web
+    ports:
+      - "3000:3000"
+    volumes:
+      - vc-data:/app/data
+      - vc-log:/app/log
+      - type: bind
+        source: ../data/cedict_1_0_ts_utf-8_mdbg.txt
+        target: /app/config/cedict_1_0_ts_utf-8_mdbg.txt
+        read_only: true
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - LOG_DIR=/app/log
+      - CEDICT_PATH=/app/config/cedict_1_0_ts_utf-8_mdbg.txt
+      - JWT_SECRET=voicecloner-prod-secret
+    restart: unless-stopped
+
+volumes:
+  vc-data:
+  vc-log:

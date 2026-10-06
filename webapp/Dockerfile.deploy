@@ -1,0 +1,35 @@
+# =============================================================================
+# 运行时就绪镜像（Dockerfile.deploy）
+# -----------------------------------------------------------------------------
+# 仅包含「已构建产物 + 生产依赖」，不含源码与构建阶段，供 pack.py 打包、
+# deploy.py（Docker 部署）使用。
+# 上下文需包含：server/package.json、server/package-lock.json、server/dist、
+#              client/dist、data/cedict_*.txt、data/named_entities.json
+# =============================================================================
+FROM node:24-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    PORT=3000 \
+    DATA_DIR=/app/data \
+    LOG_DIR=/app/log \
+    CLIENT_DIST=/app/client/dist \
+    CEDICT_PATH=/app/config/cedict_1_0_ts_utf-8_mdbg.txt \
+    NAMED_ENTITIES_PATH=/app/config/named_entities.json
+
+# 仅安装生产依赖（含 @node-rs/jieba 的平台二进制）
+COPY server/package.json server/package-lock.json ./
+RUN npm ci --omit=dev
+
+COPY server/dist ./dist
+COPY client/dist ./client/dist
+COPY data/ ./config/
+
+VOLUME ["/app/data", "/app/log"]
+EXPOSE 3000
+CMD ["node", "dist/main.js"]

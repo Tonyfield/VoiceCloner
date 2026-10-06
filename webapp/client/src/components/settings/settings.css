@@ -1,0 +1,336 @@
+/* ==========================================================================
+   Settings page — Tab 多面板属性设置页
+   规范来源：docs/ui-settings-spec.md（根目录 agent.md 索引，强制约定）
+   ========================================================================== */
+
+/* token 定义在页头与 shell 的公共祖先上，两者共用同一套尺寸/状态色 */
+.st-page,
+.st-shell {
+  /* 8pt 间距体系 / 尺寸 token（所有间距都来自这里，禁止零散 margin） */
+  --st-control-h: 30px;
+  --st-radius: 6px;
+  --st-font: 13px;
+  --st-font-sm: 12px;
+  --st-row-gap: 10px;
+  --st-label-gap: 16px;
+  --st-label-min: 96px;
+  --st-panel-pad-y: 20px;
+  --st-panel-pad-x: 24px;
+  --st-content-max: 760px;
+  --st-rail-w: 200px;
+  /* 右侧设置区四周留白（上/下/右） */
+  --st-area-margin: 5px;
+
+  /* 状态色 token：跟随当前主题（--vc-* 由 ThemeProvider 注入），不逐元素硬编码 */
+  --st-text: var(--vc-text, rgba(0, 0, 0, 0.88));
+  --st-text-2: var(--vc-muted, rgba(0, 0, 0, 0.55));
+  --st-text-3: var(--vc-muted, rgba(0, 0, 0, 0.35));
+  --st-border: var(--vc-border, rgba(0, 0, 0, 0.08));
+  --st-border-strong: var(--vc-border, rgba(0, 0, 0, 0.15));
+  --st-bg: var(--vc-surface, #ffffff);
+  --st-rail-bg: var(--vc-bg, #fafafa);
+  /* 主色文字用对比度安全色（--vc-primary-text），避免深色主题下主色文字对比不足 */
+  --st-accent: var(--vc-primary-text, #1677ff);
+  --st-accent-weak: color-mix(in srgb, var(--vc-primary, #1677ff) 18%, transparent);
+  --st-hover: color-mix(in srgb, var(--vc-text, #000) 8%, transparent);
+  --st-disabled-bg: color-mix(in srgb, var(--vc-text, #000) 6%, transparent);
+  --st-error: var(--vc-error, #ff4d4f);
+}
+
+/* ---------- 第 1 块：页头（任务名称 + TTS 模型），独立于设置区域之上 ---------- */
+.st-page {
+  display: flex;
+  flex-direction: column;
+  /* 固定高度：不依赖父级高度链（父 Form 为 auto 高度时 100% 会塌缩） */
+  height: 68vh;
+  min-height: 460px;
+  font-size: var(--st-font);
+  color: var(--st-text);
+}
+
+.st-page-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px var(--st-panel-pad-x);
+}
+
+.st-page-head .ant-form-item {
+  margin-bottom: 0;
+}
+
+/* 页头右侧操作（重置 / 保存） */
+.st-page-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- 第 2 块：分隔线 ---------- */
+.st-page-divider {
+  flex: 0 0 auto;
+  height: 1px;
+  background: var(--st-border);
+}
+
+/* 未选择 TTS 模型时的占位 */
+.st-page-empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--st-text-2);
+  font-size: var(--st-font);
+}
+
+/* ---------- 第 3 块：导航栏 + 参数设置区 ---------- */
+.st-shell {
+  display: grid;
+  grid-template-columns: var(--st-rail-w) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ---------- 左侧竖向 Tab 栏（200px，固定不跟随滚动） ---------- */
+.st-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+  padding: 8px;
+  background: var(--st-rail-bg);
+  border-right: 1px solid var(--st-border);
+}
+
+.st-rail-item {
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--st-radius);
+  background: transparent;
+  color: var(--st-text-2);
+  font-size: var(--st-font);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.st-rail-item:hover {
+  background: var(--st-hover);
+  color: var(--st-text);
+}
+
+.st-rail-item:focus-visible {
+  outline: 2px solid var(--st-accent);
+  outline-offset: -2px;
+}
+
+.st-rail-item[aria-selected="true"] {
+  background: var(--st-accent-weak);
+  color: var(--st-accent);
+  font-weight: 600;
+}
+
+/* ---------- 右侧主区：参数设置面板 ---------- */
+/* 上/下/右各留 5px，右侧设置区不贴边 */
+.st-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin: var(--st-area-margin) var(--st-area-margin) var(--st-area-margin) 0;
+}
+
+.st-panels {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.st-panel {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  transition: opacity 0.5s ease;
+}
+
+.st-panel[data-active="false"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* 内容区最大宽度 760px，左对齐（不居中拉伸） */
+.st-panel-inner {
+  max-width: var(--st-content-max);
+  padding: var(--st-panel-pad-y) var(--st-panel-pad-x);
+  text-align: left;
+}
+
+/* ---------- 行与列：两列 Grid（核心） ---------- */
+.st-grid {
+  display: grid;
+  grid-template-columns: minmax(var(--st-label-min), max-content) minmax(0, max-content);
+  column-gap: var(--st-label-gap);
+  row-gap: var(--st-row-gap);
+  align-items: start;
+}
+
+/* 标签列右对齐到控件列边界；控件列左对齐 */
+.st-label {
+  min-height: var(--st-control-h);
+  line-height: var(--st-control-h);
+  text-align: right;
+  font-size: var(--st-font);
+  color: var(--st-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.st-control {
+  min-width: 0;
+  min-height: var(--st-control-h);
+  font-size: var(--st-font);
+}
+
+.st-control .ant-form-item {
+  margin-bottom: 0;
+}
+
+/* ---------- 控件宽度：不过宽、不截断 ---------- */
+
+/* Select：由内容决定宽度，min 132 / max 360；弹层不小于锚点且容纳最长选项 */
+.st-control .ant-select {
+  min-width: 132px;
+  max-width: 360px;
+}
+
+.st-control .ant-select-selector {
+  border-radius: var(--st-radius) !important;
+}
+
+.st-control .ant-select-selection-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 文本输入：ch 单位，min 160 / max 420，不用百分比 */
+.st-input {
+  min-width: 160px;
+  max-width: 420px;
+  border-radius: var(--st-radius);
+}
+
+/* 数字 / 端口类：固定 8ch */
+.st-input-num {
+  width: 8ch;
+  min-width: 8ch;
+  border-radius: var(--st-radius);
+}
+
+/* 开关 / 复选框 / 单选组：贴合文字，与文案同行，不独占整行 */
+.st-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--st-control-h);
+}
+
+/* 正则替换规则列表：纵向堆叠，每行一条规则 */
+.st-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.st-rule-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.st-control .ant-input,
+.st-control .ant-input-number,
+.st-control .ant-select,
+.st-control .ant-btn,
+.st-control .ant-segmented {
+  font-size: var(--st-font);
+}
+
+.st-control input.ant-input,
+.st-control .ant-input-number-input {
+  height: var(--st-control-h);
+}
+
+.st-control .ant-form-item-extra {
+  margin-top: 2px;
+  font-size: var(--st-font-sm);
+  color: var(--st-text-2);
+}
+
+/* 触顶省略 + tooltip */
+.st-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 响应式降级（1100 → 900 → 680） ---------- */
+@media (max-width: 1100px) {
+  .st-shell {
+    --st-content-max: 680px;
+    --st-label-min: 88px;
+  }
+}
+
+@media (max-width: 900px) {
+  .st-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .st-rail {
+    flex-direction: row;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 6px 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--st-border);
+  }
+
+  .st-rail-item {
+    flex: 0 0 auto;
+    width: auto;
+  }
+}
+
+@media (max-width: 680px) {
+  .st-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .st-label {
+    min-height: 0;
+    line-height: normal;
+    margin-bottom: 4px;
+  }
+
+  /* 堆叠式仍保留 max-width，避免短选项被拉到全宽 */
+  .st-control .ant-select,
+  .st-input,
+  .st-input-num {
+    max-width: 100%;
+  }
+
+  .st-input-num {
+    width: 8ch;
+  }
+}
