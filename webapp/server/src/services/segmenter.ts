@@ -75,7 +75,8 @@ function needsComma(text: string): boolean {
 /** 句末标点切分（含右引号）；捕获组用于 recombine。 */
 const SENTENCE_SPLIT_RE = new RegExp("([。！？!?]+[" + CLOSING_QUOTES + "]*)");
 /** 次级标点切分（逗号、顿号、分号、冒号）；捕获组用于 recombine。 */
-const SUB_PUNCT_SPLIT_RE = /([，,、；;：:]+)/;
+// const SUB_PUNCT_SPLIT_RE = /([，,、；;：:]+)/;
+const SUB_PUNCT_SPLIT_RE = /([，,；;：:]+)/;
 
 /** 硬切分的块大小，保证不超过上限（maxChars < 40 时取 maxChars）。 */
 function hardChunkSize(maxChars: number): number {

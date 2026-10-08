@@ -10,7 +10,9 @@ export const DEFAULT_ANTD_LOCALE: Locale = zhCN;
  * 每个 import() 会被打包器拆分为独立 chunk，只在切换到该语种时下载。
  */
 const LOADERS: Record<MessagePack, () => Promise<{ default: Locale }>> = {
-  "zh-CN": () => import("antd/locale/zh_CN"),
+  // zh_CN 已静态导入为默认语言（见上），这里直接复用，避免同一模块既静态又动态导入
+  // （否则 Vite 会警告该模块无法单独分包）。
+  "zh-CN": async () => ({ default: zhCN }),
   "zh-TW": () => import("antd/locale/zh_TW"),
   en: () => import("antd/locale/en_US"),
   ja: () => import("antd/locale/ja_JP"),

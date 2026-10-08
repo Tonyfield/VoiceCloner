@@ -141,6 +141,7 @@ def add_common(items: list[tuple[Path, str]]) -> None:
         (TOOLS / "pack.py", "tools/pack.py"),
         (TOOLS / "deploy.py", "tools/deploy.py"),
         (REPO / "README.md", "README.md"),
+        (REPO / "user-guide.md", "user-guide.md"),
     ):
         if src.is_file():
             items.append((src, arc))
@@ -148,7 +149,7 @@ def add_common(items: list[tuple[Path, str]]) -> None:
 
 def preflight(items: list[tuple[Path, str]], source: bool) -> None:
     arcs = {arc for _, arc in items}
-    required = ["tools/pack.py", "tools/deploy.py", "README.md"]
+    required = ["tools/pack.py", "tools/deploy.py", "README.md", "user-guide.md"]
     required += (
         ["webapp/package.json", "webapp/server/package.json", "webapp/client/package.json", "data/cedict_1_0_ts_utf-8_mdbg.txt"]
         if source

@@ -54,7 +54,9 @@ body {
 
 /* 任务工作区顶部页签：占满高度，工作台面板内部自管滚动 */
 .task-workspace-tabs {
-  height: 100%;
+  /* 与上方「任务名称」行同处一列：占据剩余高度（不再用 height:100%） */
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }

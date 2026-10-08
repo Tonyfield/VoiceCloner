@@ -15,6 +15,7 @@ import {
 } from "../api/client";
 import { addMark, marksToXml, parseMarks, renderSegments, validatePinyin } from "../lib/phoneticMarks";
 import { getErrorMessage } from "../lib/errors";
+import { textOnColor } from "../themes";
 import { useI18n } from "../i18n";
 
 const { TextArea } = Input;
@@ -70,7 +71,7 @@ export default function SegmentRow({
   draft?: { text: string; phonetic: string };
   audioRefreshToken: number;
   serverRefreshToken: number;
-  onPlay: (key: string, url: string) => void;
+  onPlay: (key: string, url: string, source: string) => void;
   playing: boolean;
   /** 当前标记（点赞/点踩）与反馈 */
   mark?: MarkInfo;
@@ -78,6 +79,8 @@ export default function SegmentRow({
 }) {
   const { t } = useI18n();
   const { token } = theme.useToken();
+  // 注音高亮块的文字色：灰底（colorPrimaryBg）上取对比色，黑白灰主题下为中灰底 + 白字。
+  const onPrimaryBg = textOnColor(token.colorPrimaryBg);
   const initial = draft ?? { text: seg.text, phonetic: seg.phonetic };
   const [text, setText] = useState(initial.text);
   const [phonetic, setPhonetic] = useState(initial.phonetic);
@@ -395,7 +398,9 @@ export default function SegmentRow({
         borderRadius: 8,
         padding: "8px 10px",
         margin: "2px 0",
-        background: index % 2 === 1 ? token.colorFillQuaternary : "transparent",
+        background: playing || index % 2 === 1 ? token.colorFillQuaternary : "transparent",
+        // 播放中：左侧强调条（不改字色，规避黑白灰主题下灰底深字对比问题）。
+        boxShadow: playing ? `inset 3px 0 0 ${token.colorPrimary}` : undefined,
       }}
     >
       <div className="segment-header">
@@ -435,9 +440,9 @@ export default function SegmentRow({
                 top: 0,
                 left: 0,
                 right: 0,
-                zIndex: 0,
+                // 置于文本域之上：注音块用不透明灰底盖住文本域的深色文字，并绘制对比色文字
+                zIndex: 2,
                 pointerEvents: "none",
-                // 与文本域 1px 边框对齐；文字透明，只画注音高亮的背景/下划线
                 border: "1px solid transparent",
                 color: "transparent",
               }}
@@ -448,6 +453,7 @@ export default function SegmentRow({
                     key={i}
                     style={{
                       background: token.colorPrimaryBg,
+                      color: onPrimaryBg,
                       borderBottom: `2px solid ${token.colorPrimaryBorder}`,
                       borderRadius: 3,
                     }}
@@ -526,7 +532,7 @@ export default function SegmentRow({
             size="small"
             icon={<SoundOutlined />}
             type={playing ? "primary" : "default"}
-            onClick={() => onPlay(seg.key, audioUrl ?? audioName)}
+            onClick={() => onPlay(seg.key, audioUrl ?? audioName, seg.source)}
           >
             {playing ? t("seg.playing") : t("seg.play")}
           </Button>

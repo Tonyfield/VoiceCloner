@@ -5,7 +5,7 @@ import VirtualList, { type ListRef } from "rc-virtual-list";
 import {
   Badge, Button, Checkbox, Dropdown, Empty, Input, Modal, Popover, Progress, Select, Space, Spin, Tag, theme, Tooltip, Typography, message, notification,
 } from "antd";
-import { ArrowLeftOutlined, DeleteOutlined, DownOutlined, DownloadOutlined, PauseOutlined, PlayCircleOutlined, SaveOutlined, SearchOutlined, SoundOutlined, SettingOutlined, UpOutlined, WarningOutlined } from "@ant-design/icons";
+import { DeleteOutlined, DownOutlined, DownloadOutlined, PauseOutlined, PlayCircleOutlined, SaveOutlined, SearchOutlined, SoundOutlined, SplitCellsOutlined, UpOutlined, WarningOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import {
   clearTaskErrors,
@@ -26,6 +26,7 @@ import {
   addSearchHistory,
   setSegmentMark,
   stopTask,
+  taskFileUrl,
   type MarkInfo,
   type SegmentMark,
   type SegmentSearchHit,
@@ -42,9 +43,11 @@ import {
 import { getErrorMessage } from "../lib/errors";
 import { LoadQueue, type LoadPriority } from "../lib/loadQueue";
 import { STATUS_META } from "../lib/taskStatus";
+import { textOnColor } from "../themes";
 import { useI18n } from "../i18n";
 import type { Messages } from "../i18n/locales";
 import SegmentRow from "./SegmentRow";
+import PlaybackBar from "./PlaybackBar";
 
 const POLL_MS = 1800;
 
@@ -124,11 +127,11 @@ type RowItem =
 
 const ROW_HEADER_KEY = (source: string) => `__header__:${source}`;
 
-export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
+export default function TaskDetail({ taskId, skipTts, reloadToken = 0 }: {
   taskId: number;
-  taskName: string;
   skipTts: boolean;
-  onClose: () => void;
+  /** 变更后 +1 触发重新加载（如「配置」保存后）。 */
+  reloadToken?: number;
 }) {
   // i18n 的 t 取别名，避免与列表回调里的 t 冲突
   const { t: tr } = useI18n();
@@ -149,17 +152,23 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
   /** 按标记类型筛选：all | like | dislike */
   const [markFilter, setMarkFilter] = useState<"all" | SegmentMark>("all");
   const { token } = theme.useToken();
+  /**
+   * 主色浅底（colorPrimaryBg）上的文字色：按对比度自动取黑/白。
+   * 例：极简黑白灰主题的 colorPrimaryBg 是中灰 (#606366)，此时应为白字，
+   * 否则近黑字压在中灰上几乎看不清。
+   */
+  const onPrimaryBg = textOnColor(token.colorPrimaryBg);
 
   /** 工具按钮统一配色：全部随当前主题 token 变化。 */
   const inkBtnStyle: CSSProperties = {
     background: token.colorPrimaryBg,
     borderColor: token.colorPrimaryBorder,
-    color: token.colorPrimaryText,
+    color: onPrimaryBg,
   };
   const inkBtnStyleActive: CSSProperties = {
     background: token.colorPrimaryBorder,
     borderColor: token.colorPrimary,
-    color: token.colorPrimaryTextActive,
+    color: onPrimaryBg,
   };
   const [ttsLoading, setTtsLoading] = useState(false);
   const [pauseLoading, setPauseLoading] = useState(false);
@@ -172,9 +181,14 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
   const [serverRefreshToken, setServerRefreshToken] = useState(0);
   const [skipExisting, setSkipExisting] = useState(true);
   const [listHeight, setListHeight] = useState(480);
-  const [playing, setPlaying] = useState<{ key: string; url: string } | null>(null);
+  const [playing, setPlaying] = useState<{ key: string; url: string; source: string } | null>(null);
   /** 音频加载/播放中：让后台预取让路，保证播放优先。 */
   const [audioActive, setAudioActive] = useState(false);
+  /** 播放器状态：是否正在播放、是否连播、当前进度与总时长（秒）。 */
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [continuous, setContinuous] = useState(true);
+  const [audioCurrent, setAudioCurrent] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
   /** 置顶显示当前滚动位置所属章节（虚拟列表顶部行的章节）。 */
   const [pinned, setPinned] = useState<{ source: string; isHeader: boolean } | null>(null);
   /** 原文搜索。 */
@@ -222,11 +236,27 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
     if (had !== has) setDirtyCount((c) => c + (has ? 1 : -1));
   }, []);
 
-  const playSegment = useCallback((key: string, url: string) => {
-    setPlaying({ key, url });
+  const playSegment = useCallback((key: string, url: string, source: string) => {
+    setPlaying({ key, url, source });
+    setAudioCurrent(0);
+    setAudioDuration(0);
     // 播放最高优先：立即让后台预取让路，把连接/带宽留给音频。
     setAudioActive(true);
+    // 跟随滚动：先展开所在章节，行进入虚拟列表后再定位。
+    if (source && !activeKeysRef.current.includes(source)) {
+      activeKeysRef.current = [...activeKeysRef.current, source];
+      setActiveKeys(activeKeysRef.current);
+    }
     window.setTimeout(() => { void audioRef.current?.play().catch(() => {}); }, 0);
+    let attempts = 0;
+    const tryScroll = () => {
+      if (rowsRef.current.some((row) => row.key === key)) {
+        listRef.current?.scrollTo({ key, align: "auto" });
+        return;
+      }
+      if (attempts++ < 30) requestAnimationFrame(tryScroll);
+    };
+    requestAnimationFrame(tryScroll);
   }, []);
 
   // 音频加载/播放期间收敛加载队列并发（见 LoadQueue.setPlaying）。
@@ -389,7 +419,7 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
 
   useEffect(() => {
     void load({ resetChapters: true, clearSelection: true });
-  }, [load]);
+  }, [load, reloadToken]);
 
   const clearPollTimer = useCallback(() => {
     if (pollTimerRef.current !== null) {
@@ -818,6 +848,74 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
     return out;
   }, [activeKeys, chapters, info?.sources]);
 
+  /**
+   * 有序可播列表（跨章节、仅含有音频的分段）：连播 / 上一段 / 下一段均基于它。
+   * 用 chapters 而非 rows：折叠章节里的分段也要参与连播。
+   */
+  const playableSegments = useMemo(() => {
+    const list: { key: string; url: string; source: string }[] = [];
+    for (const src of info?.sources ?? []) {
+      for (const seg of chapters[src]?.items ?? []) {
+        if (seg.audio) list.push({ key: seg.key, url: taskFileUrl(taskId, seg.audio), source: src });
+      }
+    }
+    return list;
+  }, [chapters, info?.sources, taskId]);
+  const playableIndex = useMemo(
+    () => new Map(playableSegments.map((item, i) => [item.key, i])),
+    [playableSegments]
+  );
+
+  /** 上一段 / 下一段：按 playableIndex 取相邻项（±1）。 */
+  const playAdjacent = useCallback((delta: number) => {
+    if (!playing) return;
+    const i = playableIndex.get(playing.key);
+    if (i === undefined) return;
+    const target = playableSegments[i + delta];
+    if (target) playSegment(target.key, target.url, target.source);
+  }, [playableIndex, playableSegments, playSegment, playing]);
+
+  /** 播放结束 / 出错：连播且存在下一段则续播，否则停止（保留播放条）。 */
+  const goNextOrStop = useCallback(() => {
+    if (continuous && playing) {
+      const i = playableIndex.get(playing.key);
+      const next = i === undefined ? undefined : playableSegments[i + 1];
+      if (next) { playSegment(next.key, next.url, next.source); return; }
+    }
+    setIsPlaying(false);
+    setAudioActive(false);
+  }, [continuous, playableIndex, playableSegments, playSegment, playing]);
+
+  const handleAudioEnded = useCallback(() => { goNextOrStop(); }, [goNextOrStop]);
+
+  const togglePlay = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio || !playing) return;
+    if (audio.paused) void audio.play().catch(() => {});
+    else audio.pause();
+  }, [playing]);
+
+  /** 行的「播放」按钮：点当前播放段 = 暂停/继续；点其他段 = 从该段重新连播。 */
+  const handleRowPlay = useCallback((key: string, url: string, source: string) => {
+    if (playing && playing.key === key) { togglePlay(); return; }
+    playSegment(key, url, source);
+  }, [playSegment, playing, togglePlay]);
+
+  const stopPlayback = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) { audio.pause(); audio.currentTime = 0; }
+    setPlaying(null);
+    setIsPlaying(false);
+    setAudioActive(false);
+    setAudioCurrent(0);
+    setAudioDuration(0);
+  }, []);
+
+  const seekTo = useCallback((seconds: number) => {
+    const audio = audioRef.current;
+    if (audio) audio.currentTime = seconds;
+  }, []);
+
   // 原文搜索 / 按标记类型筛选：防抖调用服务端在整篇分段中检索。
   useEffect(() => {
     const query = searchQuery.trim();
@@ -996,6 +1094,8 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
     const checked = loadedKeys.length > 0 && loadedKeys.every((key) => selected.has(key));
     const partial = !checked && loadedKeys.some((key) => selected.has(key));
     const expanded = activeKeys.includes(src);
+    const chapterDone = st.items.filter((x) => x.audio).length;
+    const ratio = st.total > 0 ? chapterDone / st.total : 0;
     return (
       <div
         onClick={() => onCollapse(expanded ? activeKeys.filter((k) => k !== src) : [...activeKeys, src])}
@@ -1011,15 +1111,29 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
           border: `3px solid ${token.colorPrimary}`,
         }}
       >
-        <span style={{ width: 12 }}>{expanded ? "▾" : "▸"}</span>
+        <span style={{ width: 12, color: onPrimaryBg }}>{expanded ? "▾" : "▸"}</span>
         <Checkbox
           checked={checked}
           indeterminate={partial}
           onClick={(event) => event.stopPropagation()}
           onChange={() => void toggleSource(src)}
         />
-        <Typography.Text strong>{segTitle(src, tr("detail.bodyText"))}</Typography.Text>
-        <Tag>{st.loading ? tr("detail.loadingTag") : tr("detail.segmentsCount", { loaded: st.items.length, total: st.total })}</Tag>
+        <Typography.Text strong style={{ fontSize: 15, color: onPrimaryBg }}>{segTitle(src, tr("detail.bodyText"))}</Typography.Text>
+        {st.loading ? (
+          <Tag>{tr("detail.loadingTag")}</Tag>
+        ) : (
+          <span
+            style={{
+              fontSize: 15,
+              fontWeight: 600,
+              color: onPrimaryBg,
+              // 已合成比例越高，字色越实
+              opacity: 0.5 + 0.5 * ratio,
+            }}
+          >
+            {chapterDone}/{st.total}
+          </span>
+        )}
         {st.error && <Typography.Text type="danger" style={{ fontSize: 12 }}>{st.error}</Typography.Text>}
       </div>
     );
@@ -1042,58 +1156,32 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
     return 82 + lines * 22; // 结构固定部分(约82) + 编辑器文本行
   }, [info?.maxChars]);
 
+  /** 已完成合成的分段数（有音频的分段）。 */
+  const doneCount = useMemo(
+    () =>
+      Object.values(chapters).reduce(
+        (sum, chapter) => sum + chapter.items.reduce((n, item) => n + (item.audio ? 1 : 0), 0),
+        0
+      ),
+    [chapters]
+  );
+  const totalSegments = info?.segmentCount ?? 0;
+  /** 进度条内文字：分段数 > 1 时附带「已完成/总分段数」。 */
+  const progressText = (percent?: number) => {
+    const p = Math.round(percent ?? info?.progress ?? 0);
+    return totalSegments > 1 ? `${p}%  ${doneCount}/${totalSegments}` : `${p}%`;
+  };
+
+  // 播放条派生值：当前段在可播列表中的位置、可用的上一段/下一段、以及「正在播放」文案。
+  const playablePos = playing ? playableIndex.get(playing.key) : undefined;
+  const hasPrev = playablePos !== undefined && playablePos > 0;
+  const hasNext = playablePos !== undefined && playablePos < playableSegments.length - 1;
+  const playbackLabel = playing
+    ? tr("detail.nowPlaying", { key: playing.key, chapter: segTitle(playing.source, tr("detail.bodyText")) })
+    : "";
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flex: "0 0 auto" }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={onClose}>{tr("act.back")}</Button>
-        <Typography.Text strong style={{ fontSize: 16 }}>{tr("detail.title", { name: taskName })}</Typography.Text>
-        <div style={{ flex: 1 }} />
-        {
-        errorRows.length > 0 ? (
-          <Popover
-            trigger="click"
-            placement="bottomRight"
-            title={
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
-                <span>{tr("detail.errorHistory", { count: errorRows.length })}</span>
-                <Button
-                  size="small"
-                  danger
-                  onClick={async () => {
-                    try {
-                      await clearTaskErrors(taskId);
-                      errorCountRef.current = 0;
-                      setErrorRows([]);
-                      message.success(tr("detail.errorHistoryCleared"));
-                    } catch (e) {
-                      message.error(getErrorMessage(e, tr("error.request")));
-                    }
-                  }}
-                >
-                  {tr("act.clear")}
-                </Button>
-              </div>
-            }
-            content={
-              <div style={{ maxHeight: 360, width: 520, overflow: "auto" }}>
-                {errorRows.map((row) => (
-                  <div key={row.id} style={{ padding: "6px 0", borderBottom: `1px solid ${token.colorBorderSecondary}`, }}>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {row.created_at} · {row.stage}
-                    </Typography.Text>
-                    <div style={{ fontSize: 12, wordBreak: "break-word" }}>{row.message}</div>
-                  </div>
-                ))}
-              </div>
-            }
-          >
-            <Button size="small" danger icon={<WarningOutlined />} aria-label={tr("detail.errorHistoryAria")}>
-              {tr("st.error")} <Badge count={errorRows.length} size="small" />
-            </Button>
-          </Popover>
-        ) : null
-        }
-      </div>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {loading ? (
         <div style={{ textAlign: "center", padding: 48 }}><Spin tip={tr("detail.loadingChapters")} /></div>
@@ -1107,9 +1195,57 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
             <Space wrap>
                       <Tag color={statusMeta.color}>{tr(`st.${info?.status ?? "idle"}` as keyof Messages)}</Tag>
               {skipTts && <Tag color="cyan">{tr("detail.segmentOnly")}</Tag>}
+              {errorRows.length > 0 && (
+                <Popover
+                  trigger="click"
+                  placement="bottomLeft"
+                  title={
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+                      <span>{tr("detail.errorHistory", { count: errorRows.length })}</span>
+                      <Button
+                        size="small"
+                        danger
+                        onClick={async () => {
+                          try {
+                            await clearTaskErrors(taskId);
+                            errorCountRef.current = 0;
+                            setErrorRows([]);
+                            message.success(tr("detail.errorHistoryCleared"));
+                          } catch (e) {
+                            message.error(getErrorMessage(e, tr("error.request")));
+                          }
+                        }}
+                      >
+                        {tr("act.clear")}
+                      </Button>
+                    </div>
+                  }
+                  content={
+                    <div style={{ maxHeight: 360, width: 520, overflow: "auto" }}>
+                      {errorRows.map((row) => (
+                        <div key={row.id} style={{ padding: "6px 0", borderBottom: `1px solid ${token.colorBorderSecondary}`, }}>
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            {row.created_at} · {row.stage}
+                          </Typography.Text>
+                          <div style={{ fontSize: 12, wordBreak: "break-word" }}>{row.message}</div>
+                        </div>
+                      ))}
+                    </div>
+                  }
+                >
+                  <Button size="small" danger icon={<WarningOutlined />} aria-label={tr("detail.errorHistoryAria")}>
+                    {tr("st.error")} <Badge count={errorRows.length} size="small" />
+                  </Button>
+                </Popover>
+              )}
             </Space>
             {(info.status === "segmenting" || info.status === "running") && !showStatusOnly && (
-              <Progress percent={info.progress} size="small" style={{ width: 260, margin: 0 }} />
+              <Progress
+                percent={info.progress}
+                strokeWidth={20}
+                style={{ width: 320, margin: 0 }}
+                format={progressText}
+              />
             )}
             <Space wrap>
               <Button
@@ -1133,7 +1269,7 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
                 disabled={dirtyCount === 0} onClick={() => { void saveAll(); }}>{tr("detail.saveChanges")}</Button>
               <MenuButton
                 label={tr("detail.resegment")}
-                icon={<SettingOutlined />}
+                icon={<SplitCellsOutlined />}
                 loading={preparing}
                 type="default"
                 style={inkBtnStyle}
@@ -1214,7 +1350,7 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
                 <Typography.Text strong>
                   {info.status === "segmenting" ? tr("detail.preparing") : tr("detail.synthesizing")}
                 </Typography.Text>
-                <Progress percent={info.progress} />
+                <Progress percent={info.progress} strokeWidth={20} format={progressText} />
                 <Typography.Text type="secondary">
                   {info.status === "segmenting" ? tr("detail.preparingHint") : tr("detail.synthesizingHint")}
                 </Typography.Text>
@@ -1225,7 +1361,7 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
               <Space wrap>
                 <Button onClick={() => void load({ resetChapters: false, clearSelection: false })}>{tr("detail.refreshStatus")}</Button>
                 <Button type="primary" loading={preparing} onClick={() => void startPrepare()}>
-                  <SettingOutlined />
+                  <SplitCellsOutlined />
                   {tr("detail.resegment")}
                 </Button>
               </Space>
@@ -1235,7 +1371,7 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
               <Space wrap>
                 <Button onClick={() => void load({ resetChapters: false, clearSelection: false })}>{tr("detail.refreshStatus")}</Button>
                 <Button type="primary" loading={preparing} onClick={() => void startPrepare()}>
-                  <SettingOutlined />
+                  <SplitCellsOutlined />
                   {tr("detail.resegment")}
                 </Button>
               </Space>
@@ -1270,6 +1406,8 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
                     {(info?.sources ?? []).map((src) => {
                       const st = chapters[src] || EMPTY_CHAPTER;
                       const active = pinned?.source === src;
+                      const chapterDone = st.items.filter((x) => x.audio).length;
+                      const ratio = st.total > 0 ? chapterDone / st.total : 0;
                       return (
                         <div
                           key={src}
@@ -1280,19 +1418,26 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
                             padding: "6px 8px",
                             borderRadius: 6,
                             marginBottom: 2,
-                            fontSize: 12,
+                            fontSize: 14,
                             display: "flex",
                             justifyContent: "space-between",
                             gap: 8,
                             background: active ? token.colorPrimaryBg : "transparent",
-                            color: active ? token.colorPrimaryText : undefined,
+                            color: active ? onPrimaryBg : undefined,
                           }}
                         >
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {segTitle(src, tr("detail.bodyText"))}
                           </span>
-                          <span style={{ flex: "0 0 auto", color: token.colorTextTertiary }}>
-                            {st.loading ? "…" : `${st.items.length}/${st.total || "?"}`}
+                          <span
+                            style={{
+                              flex: "0 0 auto",
+                              // 已合成（有音频）分段数 / 总分段数；完成度越高字色越深
+                              color: active ? onPrimaryBg : token.colorText,
+                              opacity: 0.35 + 0.65 * ratio,
+                            }}
+                          >
+                            {st.loading ? "…" : `${chapterDone}/${st.total || "?"}`}
                           </span>
                         </div>
                       );
@@ -1458,7 +1603,7 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
                           draft={draftsRef.current.get(row.seg.key)}
                           audioRefreshToken={audioRefreshToken}
                           serverRefreshToken={serverRefreshToken}
-                          onPlay={playSegment}
+                          onPlay={handleRowPlay}
                           playing={playing?.key === row.seg.key}
                           mark={marks[row.seg.key]}
                           onMarked={handleMarked}
@@ -1471,18 +1616,37 @@ export default function TaskDetail({ taskId, taskName, skipTts, onClose }: {
                 </div>
               </div>
 
+              <PlaybackBar
+                visible={!!playing}
+                label={playbackLabel}
+                isPlaying={isPlaying}
+                continuous={continuous}
+                current={audioCurrent}
+                duration={audioDuration}
+                hasPrev={hasPrev}
+                hasNext={hasNext}
+                onTogglePlay={togglePlay}
+                onPrev={() => playAdjacent(-1)}
+                onNext={() => playAdjacent(1)}
+                onStop={stopPlayback}
+                onToggleContinuous={() => setContinuous((v) => !v)}
+                onSeek={seekTo}
+              />
               <audio
                 ref={audioRef}
-                controls
                 src={playing?.url}
+                hidden
                 onLoadStart={() => setAudioActive(true)}
                 onWaiting={() => setAudioActive(true)}
                 onCanPlay={() => setAudioActive(true)}
-                onPlaying={() => setAudioActive(true)}
-                onEnded={() => setAudioActive(false)}
-                onPause={() => setAudioActive(false)}
-                onError={() => setAudioActive(false)}
-                style={{ width: "100%", marginTop: 8, display: playing ? "block" : "none" }}
+                onPlay={() => { setIsPlaying(true); setAudioActive(true); }}
+                onPlaying={() => { setIsPlaying(true); setAudioActive(true); }}
+                onEnded={handleAudioEnded}
+                onPause={() => { setIsPlaying(false); setAudioActive(false); }}
+                onError={() => goNextOrStop()}
+                onTimeUpdate={() => setAudioCurrent(audioRef.current?.currentTime ?? 0)}
+                onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration || 0)}
+                onDurationChange={() => setAudioDuration(audioRef.current?.duration || 0)}
               />
             </>
           )}

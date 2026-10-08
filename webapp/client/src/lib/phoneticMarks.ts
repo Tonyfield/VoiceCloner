@@ -159,7 +159,7 @@ export function renderSegments(fullText: string, marks: PyMark[]): RenderSeg[] {
 
 // ---------- 拼音输入校验 ----------
 
-import { PINYIN_SYLLABLE_SET } from "./pinyinSyllables";
+// import { PINYIN_SYLLABLE_SET } from "./pinyinSyllables"; // 暂未使用（见下方注释的校验）
 
 /** 单个音节：字母 + 可选声调数字（1~5）。声调可省略，如 zhi / er / zi 也允许。 */
 const SYLLABLE_RE = /^([a-zA-Z]+)([1-5])?$/;
@@ -180,8 +180,8 @@ export function validatePinyin(input: string): PinyinError | null {
   for (const tok of tokens) {
     const m = SYLLABLE_RE.exec(tok);
     if (!m) return { code: "invalidSyllable", token: tok };
-    const base = m[1].toLowerCase();
-    if (!PINYIN_SYLLABLE_SET.has(base)) return { code: "invalidPinyin", token: m[1] };
+    // const base = m[1].toLowerCase();
+    // if (!PINYIN_SYLLABLE_SET.has(base)) return { code: "invalidPinyin", token: m[1] };
   }
   return null;
 }
