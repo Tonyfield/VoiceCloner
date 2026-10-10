@@ -226,10 +226,10 @@
   border-radius: var(--st-radius);
 }
 
-/* 数字 / 端口类：固定 8ch */
+/* 数字 / 端口类：固定 12ch（预留右侧上下增量按钮的宽度，避免数字被挤压） */
 .st-input-num {
-  width: 8ch;
-  min-width: 8ch;
+  width: 12ch;
+  min-width: 12ch;
   border-radius: var(--st-radius);
 }
 
@@ -331,6 +331,6 @@
   }
 
   .st-input-num {
-    width: 8ch;
+    width: 12ch;
   }
 }

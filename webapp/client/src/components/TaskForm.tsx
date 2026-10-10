@@ -3,13 +3,14 @@ import { useNavigate } from "react-router-dom";
 import {
   Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Tooltip, Typography, Upload, message,
 } from "antd";
-import { UploadOutlined, DeleteOutlined } from "@ant-design/icons";
+import { UploadOutlined } from "@ant-design/icons";
 import type { ModelSpec, Task, Voice, ParamField } from "../api/client";
 import DynamicParamForm from "./DynamicParamForm";
 import { PARAM_GROUPS, PARAM_HELP_KEYS, PARAM_OPTION_KEYS, PARAM_OPTION_VALUES, PARAM_TITLE_KEYS } from "./paramGroups";
 import SettingsShell from "./settings/SettingsShell";
 import { SettingRow, selectWidth } from "./settings/SettingRow";
 import NamedEntityTable from "./NamedEntityTable";
+import ReplaceRulesModal, { type TextRule } from "./ReplaceRulesModal";
 import { useI18n } from "../i18n";
 import type { Messages } from "../i18n/locales";
 
@@ -42,8 +43,6 @@ function defaultsFor(fields: Record<string, ParamField>): Record<string, unknown
 
 /** 分段文本增强相关的任务级默认值（与后端 textEnhance.enhanceOptionsFromParams 对应）。 */
 const TEXT_ENHANCE_DEFAULTS = {
-  interjection_prefix_enabled: true,
-  interjection_prefix: "-",
   word_gap_enabled: false,
   word_gap: "-",
   text_rules: [],
@@ -84,6 +83,7 @@ export default function TaskForm({
   const [activeTab, setActiveTab] = useState<string>("input");
   const [namedEntityOpen, setNamedEntityOpen] = useState(false);
   const [namedEntityCount, setNamedEntityCount] = useState(0);
+  const [rulesOpen, setRulesOpen] = useState(false);
   /** 打开时的初始值，用于「重置」。 */
   const baseline = useRef<Record<string, unknown>>({});
 
@@ -159,19 +159,9 @@ export default function TaskForm({
 
   /** 当前文档名：优先显示新选择的文件，其次显示任务已上传的文档。 */
   const docName = file?.name ?? task?.upload_name ?? undefined;
-  const interjectionEnabled = Form.useWatch("interjection_prefix_enabled", form);
   const wordGapEnabled = Form.useWatch("word_gap_enabled", form);
-
-  /** 规则 pattern 必须是合法 JS 正则。 */
-  const validateRulePattern = (_: unknown, value: string) => {
-    if (!value) return Promise.resolve();
-    try {
-      new RegExp(value);
-      return Promise.resolve();
-    } catch {
-      return Promise.reject(new Error(t("task.rulePatternInvalid")));
-    }
-  };
+  // text_rules 由弹窗管理、非注册字段，useWatch 不生效，用本地 state 维护规则数用于展示。
+  const [ruleCount, setRuleCount] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -197,6 +187,7 @@ export default function TaskForm({
       const values = { name: task.name, model_id: modelIdNum, skip_tts: Boolean(task.skip_tts), ...merged };
       baseline.current = values;
       form.setFieldsValue(values);
+      setRuleCount(Array.isArray(values.text_rules) ? values.text_rules.length : 0);
     } else {
       setModelId(null);
       const values = {
@@ -208,6 +199,7 @@ export default function TaskForm({
       };
       baseline.current = values;
       form.setFieldsValue(values);
+      setRuleCount(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, task]);
@@ -237,12 +229,14 @@ export default function TaskForm({
   };
 
   const onFinish = (values: any) => {
-    submit({ ...values, model_id: modelId });
+    // text_rules 由弹窗管理（非注册字段），显式取回，避免未随表单提交。
+    submit({ ...values, model_id: modelId, text_rules: form.getFieldValue("text_rules") ?? [] });
   };
 
   const resetForm = () => {
     form.resetFields();
     form.setFieldsValue(baseline.current);
+    setRuleCount(Array.isArray(baseline.current.text_rules) ? (baseline.current.text_rules as unknown[]).length : 0);
     setFile(undefined);
   };
 
@@ -355,24 +349,6 @@ export default function TaskForm({
     </SettingRow>
   );
 
-  const interjectionRow = (
-    <SettingRow label="">
-      <div className="st-inline">
-        <Form.Item name="interjection_prefix_enabled" valuePropName="checked" noStyle>
-          <Checkbox>{t("task.insertInterjection")}</Checkbox>
-        </Form.Item>
-        <Form.Item name="interjection_prefix" noStyle>
-          <Input
-            style={{ width: "10ch" }}
-            maxLength={8}
-            disabled={!interjectionEnabled}
-            placeholder="-"
-          />
-        </Form.Item>
-      </div>
-    </SettingRow>
-  );
-
   const wordGapRow = (
     <SettingRow label="">
       <div className="st-inline">
@@ -391,55 +367,17 @@ export default function TaskForm({
     </SettingRow>
   );
 
-  const rulePositionOptions = [
-    { value: "after", label: t("task.ruleAfter") },
-    { value: "before", label: t("task.ruleBefore") },
-  ];
-
-  const regexRulesRow = (
-    <SettingRow label={t("task.regexRules")}>
-      <Form.List name="text_rules">
-        {(fields, { add, remove }) => (
-          <div className="st-rule-list">
-            {fields.map(({ key, name, ...restField }) => (
-              <div className="st-rule-row" key={key}>
-                <Form.Item
-                  {...restField}
-                  name={[name, "pattern"]}
-                  rules={[
-                    { required: true, message: t("task.rulePatternRequired") },
-                    { validator: validateRulePattern },
-                  ]}
-                  style={{ marginBottom: 0 }}
-                >
-                  <Input className="st-input" style={{ width: "22ch" }} placeholder={t("task.rulePattern")} />
-                </Form.Item>
-                <Form.Item {...restField} name={[name, "position"]} style={{ marginBottom: 0 }}>
-                  <Select style={{ width: 92 }} options={rulePositionOptions} />
-                </Form.Item>
-                <Form.Item {...restField} name={[name, "insert"]} style={{ marginBottom: 0 }}>
-                  <Input.TextArea
-                    autoSize={{ minRows: 1, maxRows: 3 }}
-                    style={{ width: "24ch" }}
-                    placeholder={t("task.ruleInsert")}
-                  />
-                </Form.Item>
-                <Button
-                  type="text"
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={() => remove(name)}
-                  title={t("act.remove")}
-                />
-              </div>
-            ))}
-            <Button type="dashed" size="small" block onClick={() => add({ position: "after" })}>
-              {t("task.ruleAdd")}
-            </Button>
-          </div>
-        )}
-      </Form.List>
+  // 替换规则改为弹窗管理（增 / 删 / 改），表单只保存最终规则数组。
+  const rulesRow = (
+    <SettingRow label={t("task.replaceRules")}>
+      <Space align="center" wrap size={8}>
+        <Button size="small" onClick={() => setRulesOpen(true)}>
+          {t("task.manageRules")}
+        </Button>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {ruleCount > 0 ? t("task.rulesCount", { count: ruleCount }) : t("task.ruleEmpty")}
+        </Typography.Text>
+      </Space>
     </SettingRow>
   );
 
@@ -477,9 +415,8 @@ export default function TaskForm({
         <>
           <DynamicParamForm fields={fields} voices={voices} group="phonetic" />
           {phoneticRow}
-          {interjectionRow}
           {wordGapRow}
-          {regexRulesRow}
+          {rulesRow}
           {namedEntityRow}
         </>
       );
@@ -543,6 +480,17 @@ export default function TaskForm({
         open={namedEntityOpen}
         onClose={() => setNamedEntityOpen(false)}
         onCountChange={setNamedEntityCount}
+      />
+
+      <ReplaceRulesModal
+        open={rulesOpen}
+        value={(form.getFieldValue("text_rules") as TextRule[]) ?? []}
+        onCancel={() => setRulesOpen(false)}
+        onOk={(rules) => {
+          form.setFieldValue("text_rules", rules);
+          setRuleCount(rules.length);
+          setRulesOpen(false);
+        }}
       />
 
       <Modal

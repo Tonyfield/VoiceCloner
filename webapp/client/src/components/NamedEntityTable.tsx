@@ -16,6 +16,7 @@ import {
 } from "../api/client";
 import { getErrorMessage } from "../lib/errors";
 import { useI18n } from "../i18n";
+import { MANAGED_MODAL_BODY_HEIGHT } from "./modalSizes";
 
 interface Props {
   open: boolean;
@@ -169,6 +170,7 @@ export default function NamedEntityTable({ open, onClose, onCountChange }: Props
         width={900}
         destroyOnClose
         title={t("entity.title", { count: items.length })}
+        styles={{ body: { height: MANAGED_MODAL_BODY_HEIGHT, overflowY: "auto" } }}
       >
         <Space wrap style={{ marginBottom: 8 }}>
           <Tooltip title={t("entity.addTooltip")}>

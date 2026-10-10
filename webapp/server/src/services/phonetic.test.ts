@@ -102,6 +102,17 @@ test("automatic phonetics recalculate the current segment text", () => {
   );
 });
 
+test("repeated text: a mark targets its exact occurrence, not the first", () => {
+  // 「得」在同一段出现两次；只给最后一个注音时，必须注到最后一个，而不是第一个。
+  const source = "还得去找药房，然后灌下去。得！";
+  const xml = "还得去找药房，然后灌下去。<phoneme pinyin=\"de2\">得</phoneme>！";
+
+  assert.equal(
+    phoneticXmlToInput(source, xml),
+    "还得去找药房，然后灌下去。<得|de2>！",
+  );
+});
+
 test("unmatched text and line breaks pass through unchanged", () => {
   const dictionary = new CedictDictionary(
     new Map([["银行", ["Yin2", "hang2"]]]),

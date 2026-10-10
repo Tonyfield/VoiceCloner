@@ -41,6 +41,7 @@ import {
   type TaskStatus,
 } from "../api/client";
 import { getErrorMessage } from "../lib/errors";
+import { displayPercent } from "../lib/format";
 import { LoadQueue, type LoadPriority } from "../lib/loadQueue";
 import { STATUS_META } from "../lib/taskStatus";
 import { textOnColor } from "../themes";
@@ -1065,10 +1066,17 @@ export default function TaskDetail({ taskId, skipTts, reloadToken = 0 }: {
 
   // 记录虚拟列表顶部可见行所属的章节，用于固定在列表首行展示。
   const handleVisibleChange = useCallback((visible: RowItem[]) => {
-    const first = visible[0];
-    if (!first) {
+    if (!visible.length) {
       setPinned(null);
       return;
+    }
+    // rc-virtual-list 判断首个可见行用「bottom >= scrollTop」，因此在按 key 精确滚动
+    // （align: top，如点击左侧章节跳转）时，会把「底部恰好等于滚动位置」的上一章最后一段
+    // 也算作首个可见行，导致固定的章节比实际滚动到的章节早一章（点击章节选中上一章）。
+    // 若首个可见行是分段且其后紧邻下一章标题，说明滚动位置正好停在章节边界，应以该标题为准。
+    let first = visible[0];
+    if (first.kind === "segment" && visible[1]?.kind === "header") {
+      first = visible[1];
     }
     const next = {
       source: first.kind === "header" ? first.source : first.seg.source,
@@ -1168,7 +1176,7 @@ export default function TaskDetail({ taskId, skipTts, reloadToken = 0 }: {
   const totalSegments = info?.segmentCount ?? 0;
   /** 进度条内文字：分段数 > 1 时附带「已完成/总分段数」。 */
   const progressText = (percent?: number) => {
-    const p = Math.round(percent ?? info?.progress ?? 0);
+    const p = displayPercent(percent ?? info?.progress ?? 0);
     return totalSegments > 1 ? `${p}%  ${doneCount}/${totalSegments}` : `${p}%`;
   };
 

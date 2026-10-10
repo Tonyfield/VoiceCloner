@@ -441,6 +441,10 @@ export const taskService = {
     if (patch.text !== undefined) seg.text = patch.text;
     if (patch.phonetic !== undefined) seg.phonetic = patch.phonetic;
     fs.writeFileSync(intermediateJsonPath(id), JSON.stringify(body, null, 2), "utf8");
+    // 内容变化会改变分段 hash（进而影响「已合成」判定），必须显式失效缓存，
+    // 否则同一 mtime 粒度内的读取可能拿到旧 hash / 旧正文，保存后统计值不刷新。
+    interCache.delete(id);
+    hashCache.delete(id);
     logger.success(`✅ 段落 ${key} 已更新: id=${id}`);
     return seg;
   },

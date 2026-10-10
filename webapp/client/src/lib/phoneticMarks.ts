@@ -7,16 +7,32 @@
 export interface PyMark {
   text: string;
   pinyin: string;
+  /**
+   * 已标记文字在原文中的起始位置（可选）。
+   * 来自 XML 解析或最近一次添加；正文被编辑后位置可能失效，
+   * resolveSpans 会校验并以「逐次占用未用出现位置」的方式兜底。
+   * 有了它，重复出现的词（如多个「得」）才能各自精确对应到被注音的那一个。
+   */
+  start?: number;
 }
 
 const MARK_TAG_RE = /<phoneme pinyin="([^"]*)">([^<]*)<\/phoneme>/g;
 
 export function parseMarks(xml: string): PyMark[] {
   const marks: PyMark[] = [];
+  // 逐段累计「纯文本坐标」：XML = 纯文本 + <phoneme>标记文本</phoneme> 交替拼接，
+  // 标记的起始位置 = 其前面所有纯文本与已标记文本的长度之和。
+  let pos = 0;
+  let cursor = 0;
   for (const m of xml.matchAll(MARK_TAG_RE)) {
-    const text = m[2].trim();
-    if (!text) continue;
-    marks.push({ text, pinyin: m[1].trim() });
+    const matchStart = m.index ?? 0;
+    pos += xml.slice(cursor, matchStart).length;
+    const raw = m[2];
+    const lead = raw.length - raw.trimStart().length;
+    const text = raw.trim();
+    if (text) marks.push({ text, pinyin: m[1].trim(), start: pos + lead });
+    pos += raw.length;
+    cursor = matchStart + m[0].length;
   }
   return marks;
 }
@@ -45,25 +61,43 @@ interface Span {
 
 /**
  * 解析每个标记在原文中的跨度。
- * 同一段文字出现多次时，按标记顺序依次占用「尚未被占用」的出现位置；
- * 标记顺序与原文顺序不一致（先注后面的词、再注前面的词）也能各自定位，不会被丢弃。
+ *
+ * 优先使用标记携带的已知位置（来自 XML 解析或最近一次添加），这样重复出现的文字
+ * （同一段里有多个「得」）能精确命中被注音的那一个；位置失效（正文被编辑）时才
+ * 回退为「同一段文字出现多次时，按标记顺序依次占用尚未被占用的出现位置」。
  */
 function resolveSpans(fullText: string, marks: PyMark[]): Array<Span | null> {
+  const spans: Array<Span | null> = marks.map(() => null);
   const claimed: Span[] = [];
-  return marks.map((mark) => {
-    if (!mark.text) return null;
+
+  // 1) 先安置带明确位置的标记，避免被其它标记的贪心匹配抢先占用。
+  marks.forEach((mark, index) => {
+    if (!mark.text || typeof mark.start !== "number" || mark.start < 0) return;
+    if (!fullText.startsWith(mark.text, mark.start)) return;
+    const span = { start: mark.start, end: mark.start + mark.text.length };
+    if (claimed.some((used) => overlaps(used, span))) return;
+    claimed.push(span);
+    spans[index] = span;
+  });
+
+  // 2) 其余标记按原顺序贪心占用第一个尚未被占用的出现位置。
+  marks.forEach((mark, index) => {
+    if (spans[index] || !mark.text) return;
     let from = 0;
     for (;;) {
-      const index = fullText.indexOf(mark.text, from);
-      if (index < 0) return null;
-      const span = { start: index, end: index + mark.text.length };
+      const pos = fullText.indexOf(mark.text, from);
+      if (pos < 0) return;
+      const span = { start: pos, end: pos + mark.text.length };
       if (!claimed.some((used) => overlaps(used, span))) {
         claimed.push(span);
-        return span;
+        spans[index] = span;
+        return;
       }
-      from = index + 1;
+      from = pos + 1;
     }
   });
+
+  return spans;
 }
 
 function overlaps(a: Span | null, b: Span): boolean {
@@ -121,7 +155,9 @@ export function addMark(
 
   const span: Span = { start, end: start + text.length };
   const kept = marks.filter((_, index) => !overlaps(spans[index], span));
-  return sortByOccurrence(fullText, [...kept, { text, pinyin: pinyin.trim() }]);
+  // 关键：新标记必须带上精确位置，否则 marksToXml/resolveSpans 会把它贪心匹配到
+  // 该文字的第一个出现处（重复文字如多个「得」会被注错）。
+  return sortByOccurrence(fullText, [...kept, { text, pinyin: pinyin.trim(), start }]);
 }
 
 /**

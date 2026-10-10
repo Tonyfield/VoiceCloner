@@ -1,8 +1,8 @@
 import { Button, Slider, Space, theme, Tooltip, Typography } from "antd";
 import {
+  CaretRightOutlined,
   CloseOutlined,
-  PauseCircleOutlined,
-  PlayCircleOutlined,
+  PauseOutlined,
   RetweetOutlined,
   StepBackwardOutlined,
   StepForwardOutlined,
@@ -75,7 +75,7 @@ export default function PlaybackBar({
               shape="circle"
               type="primary"
               aria-label={isPlaying ? t("detail.ttsPauseShort") : t("seg.play")}
-              icon={isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+              icon={isPlaying ? <PauseOutlined /> : <CaretRightOutlined />}
               onClick={onTogglePlay}
             />
           </Tooltip>

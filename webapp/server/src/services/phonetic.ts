@@ -20,17 +20,31 @@ export interface PyMark {
   text: string;
   /** 拼音串，空格分隔的音节，数量应与 text 中的中文字数一致（允许不一致，多余/缺失按原文输出） */
   pinyin: string;
+  /**
+   * 标记文字在原文中的起始位置（可选，解析 XML 时得出）。
+   * 用于重复文字（同一段多个「得」）精确对应到被注音的那一个；
+   * 缺失或与原文不符时回退为按顺序查找第一个出现位置。
+   */
+  start?: number;
 }
 
 const MARK_TAG_RE = /<phoneme pinyin="([^"]*)">([^<]*)<\/phoneme>/g;
 
-/** 解析内部表达 XML → 有序标记列表。 */
+/** 解析内部表达 XML → 有序标记列表（含每段在原文中的起始位置）。 */
 export function parsePhoneticXml(xml: string): PyMark[] {
   const marks: PyMark[] = [];
+  // XML = 纯文本 + <phoneme>标记</phoneme> 交替拼接，累计纯文本/标记文本长度即得原文坐标。
+  let pos = 0;
+  let cursor = 0;
   for (const m of xml.matchAll(MARK_TAG_RE)) {
-    const text = m[2].trim();
-    if (!text) continue;
-    marks.push({ text, pinyin: m[1].trim() });
+    const matchStart = m.index ?? 0;
+    pos += xml.slice(cursor, matchStart).length;
+    const raw = m[2];
+    const lead = raw.length - raw.trimStart().length;
+    const text = raw.trim();
+    if (text) marks.push({ text, pinyin: m[1].trim(), start: pos + lead });
+    pos += raw.length;
+    cursor = matchStart + m[0].length;
   }
   return marks;
 }
@@ -141,7 +155,11 @@ export function phoneticXmlToInput(text: string, xml: string): string {
   let cursor = 0;
   for (const mk of marks) {
     if (!mk.text) continue;
-    const idx = text.indexOf(mk.text, cursor);
+    // 优先用标记在原文中的精确位置，避免重复文字被注到第一个出现处；
+    // 位置缺失/失效/回退时，退回「从 cursor 起找第一个出现位置」的旧行为。
+    const at = mk.start;
+    const useAt = typeof at === "number" && at >= cursor && text.startsWith(mk.text, at);
+    const idx = useAt ? (at as number) : text.indexOf(mk.text, cursor);
     if (idx < 0) continue; // 标记文字已不在原文，跳过该标记
     out += text.slice(cursor, idx);
     out += annotate(mk.text, mk.pinyin);

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Button, Checkbox, Input, Modal, Popover, Space, Tag, Tooltip, Typography, message, theme } from "antd";
-import { DislikeOutlined, HistoryOutlined, LikeOutlined, ReloadOutlined, SoundOutlined } from "@ant-design/icons";
+import { CheckOutlined, CloseOutlined, DeleteOutlined, DislikeOutlined, HistoryOutlined, LikeOutlined, ReloadOutlined, SoundOutlined } from "@ant-design/icons";
 import {
   autoPhonetic,
   getSegmentSteps,
@@ -101,6 +101,34 @@ export default function SegmentRow({
   const [savingMark, setSavingMark] = useState(false);
   const [stepsOpen, setStepsOpen] = useState(false);
   const [steps, setSteps] = useState<SegmentStep[] | null>(null);
+  /** 悬浮在已注音文字上时的气泡：标记序号 + 相对编辑区的定位（px）。 */
+  const [hover, setHover] = useState<{ markIndex: number; top: number; left: number } | null>(null);
+  const editorBoxRef = useRef<HTMLDivElement | null>(null);
+  const hoverHideRef = useRef<number | null>(null);
+
+  /** 取消「离开后延迟隐藏悬浮气泡」的定时器（鼠标移入气泡时不隐藏）。 */
+  const cancelHoverHide = () => {
+    if (hoverHideRef.current !== null) {
+      window.clearTimeout(hoverHideRef.current);
+      hoverHideRef.current = null;
+    }
+  };
+  /** 鼠标离开注音文字/气泡后延迟隐藏，留出移动到气泡上的时间。 */
+  const scheduleHoverHide = () => {
+    cancelHoverHide();
+    hoverHideRef.current = window.setTimeout(() => {
+      hoverHideRef.current = null;
+      setHover(null);
+    }, 160);
+  };
+  /** 鼠标进入某个注音文字：记录其相对编辑区的位置，用于定位气泡。 */
+  const showHover = (markIndex: number, el: HTMLElement) => {
+    const box = editorBoxRef.current?.getBoundingClientRect();
+    if (!box) return;
+    const rect = el.getBoundingClientRect();
+    cancelHoverHide();
+    setHover({ markIndex, top: rect.top - box.top, left: rect.left - box.left });
+  };
 
   const dirty = text !== orig.current.text || phonetic !== orig.current.phonetic;
   const audioUrl = audioName ? `${taskFileUrl(taskId, audioName)}?t=${audioVersion}` : null;
@@ -122,8 +150,11 @@ export default function SegmentRow({
     const s = ta.selectionStart ?? 0;
     const e = ta.selectionEnd ?? 0;
     if (e > s) {
-      const selText = ta.value.slice(s, e).trim();
-      if (selText) { setSelection({ start: s, end: e, selText }); return; }
+      const raw = ta.value.slice(s, e);
+      const lead = raw.length - raw.trimStart().length;
+      const selText = raw.trim();
+      // start 需对齐到 trim 后的文字起点，否则含空白选区会令 addMark 的定位失效。
+      if (selText) { setSelection({ start: s + lead, end: s + lead + selText.length, selText }); return; }
     }
     setSelection(null);
   };
@@ -154,6 +185,7 @@ export default function SegmentRow({
     setAnnotate(null);
     setSelection(null);
     setPyInput("");
+    setHover(null);
   };
   const removeMark = () => {
     if (!annotate || annotate.mode !== "edit") return;
@@ -161,6 +193,14 @@ export default function SegmentRow({
     setAnnotate(null);
     setSelection(null);
     setPyInput("");
+    setHover(null);
+  };
+  /** 取消注音编辑（气泡里的叉号）：不改动文本，直接关闭编辑框。 */
+  const cancelAnnotate = () => {
+    setAnnotate(null);
+    setSelection(null);
+    setPyInput("");
+    setHover(null);
   };
 
   // 浮层外点击 → 关闭菜单 / 注音编辑框（失去焦点自动关闭）
@@ -174,6 +214,11 @@ export default function SegmentRow({
     };
     document.addEventListener("mousedown", onDocDown);
     return () => document.removeEventListener("mousedown", onDocDown);
+  }, []);
+
+  // 组件卸载时清理悬浮气泡的延迟隐藏定时器。
+  useEffect(() => () => {
+    if (hoverHideRef.current !== null) window.clearTimeout(hoverHideRef.current);
   }, []);
 
   // 未保存的编辑写入父级草稿（父级以草稿为准保存），虚拟列表卸载本行后
@@ -253,12 +298,15 @@ export default function SegmentRow({
   };
 
   const editExisting = (markIndex: number) => {
+    cancelHoverHide();
+    setHover(null);
     setAnnotate({ mode: "edit", markIndex });
     setPyInput(marks[markIndex]?.pinyin ?? "");
     setSelection(null);
   };
 
-  // 高亮层位于文本域下方（只画背景），无法直接接收点击；改为按光标位置判定是否点中了某个注音片段。
+  // 已注音文字由高亮层上的 span 直接接收鼠标事件（悬浮气泡/点击编辑）；
+  // 这里保留按光标位置判定的兜底逻辑，处理高亮层未覆盖到的情况。
   const handleCaret = (ta: HTMLTextAreaElement) => {
     syncSelection(ta);
     const start = ta.selectionStart ?? 0;
@@ -369,23 +417,33 @@ export default function SegmentRow({
             ? <>{t("seg.selectedCount", { count: annotate.selText.length })}<b>{annotate.selText}</b></>
             : null}
       </Typography.Text>
-      <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "stretch" }}>
-        <Space.Compact style={{ flex: 1 }}>
-          <Input
-            size="small"
-            placeholder={t("seg.pinyinPlaceholder")}
-            value={pyInput}
-            onChange={(e) => setPyInput(e.target.value)}
-            onPressEnter={confirmAnnotate}
-            autoFocus
-          />
-          <Button size="small" type="primary" onClick={confirmAnnotate}>
-            {annotate?.mode === "edit" ? t("act.save") : t("seg.annotate")}
-          </Button>
-        </Space.Compact>
+      <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+        <Input
+          size="small"
+          placeholder={t("seg.pinyinPlaceholder")}
+          value={pyInput}
+          onChange={(e) => setPyInput(e.target.value)}
+          onPressEnter={confirmAnnotate}
+          autoFocus
+          style={{ flex: 1 }}
+        />
         {annotate?.mode === "edit" && (
-          <Button danger size="small" onClick={removeMark}>{t("act.delete")}</Button>
+          <Tooltip title={t("act.delete")}>
+            <Button danger size="small" icon={<DeleteOutlined />} aria-label={t("act.delete")} onClick={removeMark} />
+          </Tooltip>
         )}
+        <Tooltip title={t("act.cancel")}>
+          <Button size="small" icon={<CloseOutlined />} aria-label={t("act.cancel")} onClick={cancelAnnotate} />
+        </Tooltip>
+        <Tooltip title={annotate?.mode === "edit" ? t("act.save") : t("seg.annotate")}>
+          <Button
+            size="small"
+            type="primary"
+            icon={<CheckOutlined />}
+            aria-label={annotate?.mode === "edit" ? t("act.save") : t("seg.annotate")}
+            onClick={confirmAnnotate}
+          />
+        </Tooltip>
       </div>
     </div>
   );
@@ -429,7 +487,7 @@ export default function SegmentRow({
       </div>
 
       {viewMode === "text" ? (
-        <div style={{ position: "relative" }}>
+        <div ref={editorBoxRef} style={{ position: "relative" }}>
           {/* 单个滚动容器：高亮层与文本域同宽、随容器一起滚动，保证换行与选区完全对齐 */}
           <div style={{ position: "relative", maxHeight: EDITOR_MAX_HEIGHT, overflowY: "auto" }}>
             <div
@@ -451,11 +509,19 @@ export default function SegmentRow({
                 s.marked ? (
                   <span
                     key={i}
+                    data-phoneme={s.markIndex}
+                    onMouseEnter={(e) => showHover(s.markIndex, e.currentTarget)}
+                    onMouseLeave={scheduleHoverHide}
+                    onClick={() => editExisting(s.markIndex)}
                     style={{
                       background: token.colorPrimaryBg,
                       color: onPrimaryBg,
                       borderBottom: `2px solid ${token.colorPrimaryBorder}`,
                       borderRadius: 3,
+                      // 只有已注音文字接收鼠标事件（其余高亮层穿透到文本域），
+                      // 以便悬浮显示注音气泡、点击进入编辑。
+                      pointerEvents: "auto",
+                      cursor: "pointer",
                     }}
                   >
                     {s.text}
@@ -471,6 +537,7 @@ export default function SegmentRow({
               value={text}
               onChange={(e) => {
                 const nextText = e.target.value;
+                setHover(null);
                 setText(nextText);
                 setPhonetic((current) => marksToXml(parseMarks(current), nextText));
               }}
@@ -507,6 +574,34 @@ export default function SegmentRow({
               }}
             >
               {annotate ? annotateBar : menuBar}
+            </div>
+          )}
+
+          {/* 悬浮在已注音文字上的注音气泡：显示拼音，点击进入编辑 */}
+          {hover && !annotate && !selection && marks[hover.markIndex] && (
+            <div
+              onMouseEnter={cancelHoverHide}
+              onMouseLeave={scheduleHoverHide}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => editExisting(hover.markIndex)}
+              style={{
+                position: "absolute",
+                top: hover.top,
+                left: hover.left,
+                transform: "translateY(calc(-100% - 6px))",
+                zIndex: 30,
+                background: token.colorBgElevated,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                borderRadius: token.borderRadiusLG,
+                padding: "4px 8px",
+                boxShadow: token.boxShadowTertiary,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <Typography.Text style={{ fontSize: 12 }}>
+                {t("seg.pinyinTooltip", { pinyin: marks[hover.markIndex].pinyin })}
+              </Typography.Text>
             </div>
           )}
         </div>

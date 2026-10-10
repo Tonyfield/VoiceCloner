@@ -11,6 +11,7 @@ import {
 } from "../api/client";
 import TaskForm from "../components/TaskForm";
 import { getErrorMessage } from "../lib/errors";
+import { displayPercent } from "../lib/format";
 import { STATUS_META, isSkipTtsBlocked, needsPrepare } from "../lib/taskStatus";
 import { usePolling } from "../hooks/usePolling";
 import { useI18n } from "../i18n";
@@ -190,7 +191,7 @@ export default function TasksPage() {
                     </Typography.Text>
                   </div>
                   {(t.status === "segmenting" || t.status === "running") && (
-                    <Progress percent={t.progress} size="small" />
+                    <Progress percent={t.progress} size="small" format={() => `${displayPercent(t.progress)}%`} />
                   )}
                   {t.status === "error" && (
                     <Typography.Text type="danger" style={{ fontSize: 12 }}>
