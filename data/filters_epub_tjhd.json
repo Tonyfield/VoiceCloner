@@ -1,0 +1,5 @@
+{
+  "head": "<head>.*</head>",
+  "notecontent": "<p class=\"notecontent\">.*</p>",
+  "note_marker_1": "<a .*><.*>\\[[0-9]{1,9}\\]<.*></a>"
+}

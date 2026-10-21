@@ -137,7 +137,7 @@ function seedAdmin(): void {
   if (row) return;
   db.prepare(
     "INSERT INTO users(username, password_sha256) VALUES(?, ?)"
-  ).run("admin", hashPassword("StanislawLem"));
+  ).run("admin", hashPassword("admin"));
   logger.info("🔑 已创建初始用户 admin");
 }
 

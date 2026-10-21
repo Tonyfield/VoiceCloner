@@ -38,7 +38,7 @@ function makeWav() {
 }
 
 // 1) login + me
-const login = await j(await fetch(`${BASE}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: "admin", password: "StanislawLem" }) }));
+const login = await j(await fetch(`${BASE}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: "admin", password: "admin" }) }));
 const H = { Authorization: `Bearer ${login.token}`, };
 const me = await j(await fetch(`${BASE}/auth/me`, { headers: H }));
 if (me.user.username !== "admin") fail("me.username");
@@ -183,11 +183,11 @@ await j(await fetch(`${BASE}/tasks/${selectiveTid}`, { method: "DELETE", headers
 ok("selected tts task deleted");
 
 // 7) change password -> old fails -> restore
-await j(await fetch(`${BASE}/auth/change-password`, { method: "POST", headers: { ...H, "Content-Type": "application/json" }, body: JSON.stringify({ oldPassword: "StanislawLem", newPassword: "NewPass123" }) }));
-const oldRes = await fetch(`${BASE}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: "admin", password: "StanislawLem" }) });
+await j(await fetch(`${BASE}/auth/change-password`, { method: "POST", headers: { ...H, "Content-Type": "application/json" }, body: JSON.stringify({ oldPassword: "admin", newPassword: "NewPass123" }) }));
+const oldRes = await fetch(`${BASE}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: "admin", password: "admin" }) });
 if (oldRes.status !== 401) fail(`old password should fail, got ${oldRes.status}`);
 const newLogin = await j(await fetch(`${BASE}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: "admin", password: "NewPass123" }) }));
-await j(await fetch(`${BASE}/auth/change-password`, { method: "POST", headers: { Authorization: `Bearer ${newLogin.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ oldPassword: "NewPass123", newPassword: "StanislawLem" }) }));
+await j(await fetch(`${BASE}/auth/change-password`, { method: "POST", headers: { Authorization: `Bearer ${newLogin.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ oldPassword: "NewPass123", newPassword: "admin" }) }));
 ok("change-password: old rejected, new accepted, restored");
 
 // 8) unreachable TTS -> error message contains URL

@@ -105,6 +105,9 @@ export function enhanceOptionsFromParams(
 }
 
 export function hasEnhancement(options: TextEnhanceOptions): boolean {
+  logger.debug(`wordGap   : ${options.wordGap}` )
+  logger.debug(`textRules : ${options.textRules?.length}`)
+  logger.debug(`entities  : ${options.entities?.length}`)
   return (
     Boolean(options.wordGap) ||
     Boolean(options.textRules?.length) ||

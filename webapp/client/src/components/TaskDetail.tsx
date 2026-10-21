@@ -790,8 +790,6 @@ export default function TaskDetail({ taskId, skipTts, reloadToken = 0 }: {
     info?.status === "running"
       ? [
           { key: "pause", label: tr("detail.ttsPause") },
-          { key: "selected", label: tr("detail.ttsSelected"), disabled: selected.size === 0 },
-          { key: "all", label: tr("detail.ttsAll") },
           { key: "stop", label: tr("detail.ttsStop"), danger: true },
         ]
       : info?.status === "paused"
